@@ -1,0 +1,35 @@
+Backend's Role (Calculation & Information):
+
+The Python backend we designed (app.py) acts as the "brain" for the strategies.
+When the frontend asks "How do I execute 'Mega Long' with $100?", the backend fetches current prices, does the math (equal weight, 3x leverage), and tells the frontend exactly what individual orders are needed (e.g., "Buy 0.00123 BTC", "Buy 0.0456 ETH", "Buy 0.789 SOL" - all with 3x leverage flags set if required by the execution API).
+It also provides the P/L information (GET /pnl/...).
+
+Frontend's Role (User Interface & Execution Orchestration):
+
+The website (frontend) is where the action of trading happens, initiated by the user.
+It needs to integrate with:
+A User Wallet: Like MetaMask, Rabby, or another wallet compatible with Hyperliquid. This holds the user's keys securely.
+A Hyperliquid Frontend Library/SDK: This is crucial. You'll need Hyperliquid's official (or a community-supported) JavaScript library (or equivalent for your frontend framework) that can:
+Connect to the user's wallet.
+Take the trade parameters received from your backend.
+Construct the actual transaction(s) needed to place those orders on Hyperliquid.
+Prompt the user via their wallet to sign and approve those transactions.
+Submit the signed transactions to the Hyperliquid network.
+
+How "Mega Long" Gets Traded (Step-by-Step Flow):
+
+
+User Action: User goes to your RebelSwap website, connects their wallet, enters "$100" into an input field, and clicks the "MEGA Long" button.
+
+Frontend -> Backend: The frontend sends a request to your Python backend: POST /trades/calculate with { "strategy_id": "MEGA", "total_usd_size": 100 }.
+
+Backend -> Frontend: The backend calculates the required trades (e.g., long BTC size X, long ETH size Y, long SOL size Z at 3x leverage) and sends these parameters back to the frontend in the JSON response (like the example in the previous answer).
+
+Frontend Executes (The "Trading" Part):
+The frontend receives the parameters: [ {asset: "BTC", is_buy: true, size_asset: "X", leverage: 3}, {asset: "ETH", ...}, {asset: "SOL", ...} ].
+Using the Hyperliquid frontend library, it constructs the necessary API calls to place these three separate leveraged orders.
+The library interfaces with the connected user wallet. The wallet pops up, asking the user: "Do you want to approve these 3 transactions (Place Long BTC order, Place Long ETH order, Place Long SOL order) on Hyperliquid?"
+User Action: The user reviews and clicks "Approve" or "Confirm" in their wallet.
+The frontend library sends the signed transactions to Hyperliquid.
+
+Result: The trades are executed on Hyperliquid using the user's funds and account, fulfilling the "Mega Long" strategy.
