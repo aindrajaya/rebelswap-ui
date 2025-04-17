@@ -7,10 +7,8 @@ const Navbar: React.FC = () => {
     <nav className="bg-background/95 backdrop-blur-sm border-b border-neutral-800 py-4 px-6 sticky top-0 z-10">
       <div className="container mx-auto flex justify-between items-center">
         <div className="flex items-center space-x-2">
-          <Link href="/">
-            <a className="text-2xl font-bold text-white">
-              Rebel<span className="text-primary">Swap</span>
-            </a>
+          <Link href="/" className="text-2xl font-bold text-white">
+            Rebel<span className="text-primary">Swap</span>
           </Link>
         </div>
         
