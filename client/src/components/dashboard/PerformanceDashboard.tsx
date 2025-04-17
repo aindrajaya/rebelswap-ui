@@ -1,24 +1,94 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import StrategyPerformanceCard from './StrategyPerformanceCard';
 import useWallet from '@/hooks/useWallet';
 import useStrategies from '@/hooks/useStrategies';
+import { getStrategyPnl, StrategyPnl } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
 
 type TimeRange = '24H' | '7D' | '30D' | 'ALL';
 
+interface PerformanceData {
+  [strategyId: string]: {
+    change: number;
+    data: number[];
+  };
+}
+
 const PerformanceDashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24H');
-  const { isConnected } = useWallet();
-  const { strategies } = useStrategies();
+  const { address, isConnected } = useWallet();
+  const { strategies, isLoading: isLoadingStrategies } = useStrategies();
   
-  // Sample performance data - in production these would come from an API
-  const performanceData = {
-    'MEGA': { change: 28.5, data: [30, 45, 25, 60, 40, 70, 85] },
-    'DOWN': { change: -12.4, data: [60, 80, 50, 40, 30, 20, 30] },
-    'Z00M': { change: 85.2, data: [20, 35, 65, 80, 60, 95, 90] },
-    'DUMP': { change: -42.7, data: [75, 60, 45, 30, 20, 15, 10] }
+  // Get strategy PnL data
+  const { 
+    data: strategyPnlData, 
+    isLoading: isLoadingPnl, 
+    isError
+  } = useQuery({
+    queryKey: ['strategy_pnl', address, timeRange],
+    queryFn: () => address ? getStrategyPnl(address) : Promise.resolve([]),
+    enabled: !!address && isConnected,
+    staleTime: 60000, // 1 minute
+  });
+  
+  // Convert API strategy PnL to performance data format
+  const formatPerformanceData = (pnlData: StrategyPnl[]): PerformanceData => {
+    const performanceData: PerformanceData = {};
+    
+    // Process real data from API
+    pnlData.forEach(strategy => {
+      // Generate mock chart data points based on PnL trend
+      // In a real implementation, this would use historical data points from the API
+      const generateDataPoints = (pnlPct: number): number[] => {
+        // Generate 7 data points with overall trend matching the pnl percentage
+        const startPoint = 50; // Start in the middle
+        const endPoint = Math.min(Math.max(startPoint + (pnlPct * 1.5), 10), 90); // Ensure between 10-90
+        
+        // Linear interpolation between start and end points
+        const step = (endPoint - startPoint) / 6;
+        
+        // Add some random noise to make it look more realistic
+        return Array(7).fill(0).map((_, i) => {
+          const baseValue = startPoint + (step * i);
+          const noise = Math.random() * 10 - 5; // Random value between -5 and 5
+          return Math.min(Math.max(baseValue + noise, 5), 95); // Ensure between 5-95
+        });
+      };
+      
+      performanceData[strategy.strategyId] = {
+        change: strategy.totalPnlPct,
+        data: generateDataPoints(strategy.totalPnlPct)
+      };
+    });
+    
+    // If some strategies are missing in the real data, add them with neutral performance
+    // This ensures all strategies are displayed even if user doesn't have positions in them
+    Object.keys(strategies).forEach(strategyId => {
+      if (!performanceData[strategyId]) {
+        performanceData[strategyId] = {
+          change: 0,
+          data: [50, 50, 50, 50, 50, 50, 50] // Flat line for strategies with no data
+        };
+      }
+    });
+    
+    return performanceData;
   };
+  
+  // Generate performance data
+  const performanceData = strategyPnlData && !isLoadingPnl
+    ? formatPerformanceData(strategyPnlData)
+    : {
+        'MEGA': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+        'DOWN': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+        'Z00M': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+        'DUMP': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }
+      };
+  
+  const isLoading = isLoadingStrategies || isLoadingPnl;
   
   return (
     <Card className="shadow-md">
@@ -53,6 +123,15 @@ const PerformanceDashboard: React.FC = () => {
               <span className="material-icons text-4xl text-muted-foreground mb-2">insert_chart</span>
               <p className="text-muted-foreground">Connect wallet to view performance charts</p>
             </div>
+          ) : isLoading ? (
+            <div className="text-center">
+              <Skeleton className="h-40 w-full rounded-lg" />
+            </div>
+          ) : isError ? (
+            <div className="text-center">
+              <span className="material-icons text-4xl text-red-500 mb-2">error</span>
+              <p className="text-muted-foreground">Error loading performance data</p>
+            </div>
           ) : (
             <div className="text-center">
               <span className="material-icons text-4xl text-muted-foreground mb-2">analytics</span>
@@ -63,16 +142,24 @@ const PerformanceDashboard: React.FC = () => {
         
         {/* Strategy Performance Grid */}
         <h3 className="text-lg font-medium mb-3">Strategy Performance</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.keys(strategies).map((strategyId) => (
-            <StrategyPerformanceCard
-              key={strategyId}
-              strategyId={strategyId}
-              strategy={strategies[strategyId]}
-              performance={performanceData[strategyId as keyof typeof performanceData]}
-            />
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.keys(strategies).map((strategyId) => (
+              <StrategyPerformanceCard
+                key={strategyId}
+                strategyId={strategyId}
+                strategy={strategies[strategyId]}
+                performance={performanceData[strategyId] || { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }}
+              />
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -31,11 +31,50 @@ export interface TradeCalculationResult {
   timestamp: number;
 }
 
+export interface Position {
+  asset: string;
+  size: number;
+  side: 'long' | 'short';
+  entryPrice: number;
+  markPrice: number;
+  pnl: number;
+  pnlPct: number;
+  liquidationPrice: number;
+  leverage: number;
+  margin: number;
+  strategy?: string;
+}
+
+export interface StrategyPnl {
+  strategyId: string;
+  totalPnl: number;
+  totalPnlPct: number;
+  positionCount: number;
+  positions: Position[];
+}
+
+export interface Balance {
+  total: number;
+  available: number;
+  inPositions: number;
+}
+
 export interface Asset {
   name: string;
   price: number;
   change24h: number;
   volume24h: number;
+}
+
+export interface Order {
+  id: string;
+  asset: string;
+  side: 'buy' | 'sell';
+  size: number;
+  price: number;
+  type: 'limit' | 'market';
+  status: 'open' | 'filled' | 'cancelled';
+  timestamp: number;
 }
 
 // API functions
@@ -51,6 +90,26 @@ export async function getAssets(): Promise<string[]> {
 
 export async function calculateTrades(params: TradeCalculationParams): Promise<TradeCalculationResult> {
   const res = await apiRequest("POST", "/api/trades/calculate", params);
+  return res.json();
+}
+
+export async function getUserPositions(address: string): Promise<Position[]> {
+  const res = await apiRequest("GET", `/api/positions/${address}`, undefined);
+  return res.json();
+}
+
+export async function getStrategyPnl(address: string): Promise<StrategyPnl[]> {
+  const res = await apiRequest("GET", `/api/strategy_pnl/${address}`, undefined);
+  return res.json();
+}
+
+export async function getUserBalance(address: string): Promise<Balance> {
+  const res = await apiRequest("GET", `/api/balance/${address}`, undefined);
+  return res.json();
+}
+
+export async function getUserOrders(address: string): Promise<Order[]> {
+  const res = await apiRequest("GET", `/api/orders/${address}`, undefined);
   return res.json();
 }
 

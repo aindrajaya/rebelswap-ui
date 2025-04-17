@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import axios from "axios";
 
 // API endpoints for backend services
-const BACKEND_API_URL = "http://localhost:8000"; // Backend API URL (Python Flask service)
+const BACKEND_API_URL = "http://localhost:5000"; // Backend API URL (Python Flask service)
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Service status endpoint
@@ -79,6 +79,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         error: "Failed to calculate trades",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get user positions
+  app.get("/api/positions/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        return res.status(400).json({
+          error: "Missing user address",
+          details: "A valid wallet address is required"
+        });
+      }
+      
+      const response = await axios.get(`${BACKEND_API_URL}/positions/${address}`);
+      res.json(response.data);
+    } catch (error) {
+      console.error("Failed to fetch positions:", error);
+      
+      if (axios.isAxiosError(error) && error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: "Failed to fetch positions",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get user strategy P&L
+  app.get("/api/strategy_pnl/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        return res.status(400).json({
+          error: "Missing user address",
+          details: "A valid wallet address is required"
+        });
+      }
+      
+      const response = await axios.get(`${BACKEND_API_URL}/strategy_pnl/${address}`);
+      res.json(response.data);
+    } catch (error) {
+      console.error("Failed to fetch strategy P&L:", error);
+      
+      if (axios.isAxiosError(error) && error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: "Failed to fetch strategy P&L",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get user balance
+  app.get("/api/balance/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        return res.status(400).json({
+          error: "Missing user address",
+          details: "A valid wallet address is required"
+        });
+      }
+      
+      const response = await axios.get(`${BACKEND_API_URL}/balance/${address}`);
+      res.json(response.data);
+    } catch (error) {
+      console.error("Failed to fetch user balance:", error);
+      
+      if (axios.isAxiosError(error) && error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: "Failed to fetch user balance",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get open orders
+  app.get("/api/orders/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        return res.status(400).json({
+          error: "Missing user address",
+          details: "A valid wallet address is required"
+        });
+      }
+      
+      const response = await axios.get(`${BACKEND_API_URL}/orders/${address}`);
+      res.json(response.data);
+    } catch (error) {
+      console.error("Failed to fetch open orders:", error);
+      
+      if (axios.isAxiosError(error) && error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: "Failed to fetch open orders",
         details: error instanceof Error ? error.message : "Unknown error"
       });
     }
