@@ -21,6 +21,7 @@ const PerformanceDashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24H');
   const { address, isConnected } = useWallet();
   const { strategies, isLoading: isLoadingStrategies } = useStrategies();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Get strategy PnL data
   const { 
@@ -28,10 +29,24 @@ const PerformanceDashboard: React.FC = () => {
     isLoading: isLoadingPnl, 
     isError
   } = useQuery({
-    queryKey: ['strategy_pnl', address, timeRange],
-    queryFn: () => address ? getStrategyPnl(address) : Promise.resolve([]),
+    queryKey: ['pnl', address, timeRange],
+    queryFn: async () => {
+      if (!address) return Promise.resolve([]);
+      
+      try {
+        const data = await getStrategyPnl(address);
+        return data;
+      } catch (error) {
+        console.error("Error fetching strategy PnL:", error);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred';
+        setErrorMessage(errorMsg);
+        return Promise.reject(error);
+      }
+    },
     enabled: !!address && isConnected,
     staleTime: 60000, // 1 minute
+    retry: 2, // Retry failed requests up to 2 times
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
   
   // Convert API strategy PnL to performance data format
@@ -65,28 +80,41 @@ const PerformanceDashboard: React.FC = () => {
     });
     
     // If some strategies are missing in the real data, add them with neutral performance
-    // This ensures all strategies are displayed even if user doesn't have positions in them
-    Object.keys(strategies).forEach(strategyId => {
-      if (!performanceData[strategyId]) {
-        performanceData[strategyId] = {
-          change: 0,
-          data: [50, 50, 50, 50, 50, 50, 50] // Flat line for strategies with no data
-        };
-      }
-    });
+    if (strategies) {
+      Object.keys(strategies).forEach(strategyId => {
+        if (!performanceData[strategyId]) {
+          performanceData[strategyId] = {
+            change: 0,
+            data: [50, 50, 50, 50, 50, 50, 50] // Flat line for strategies with no data
+          };
+        }
+      });
+    }
     
     return performanceData;
   };
   
-  // Generate performance data
-  const performanceData = strategyPnlData && !isLoadingPnl
-    ? formatPerformanceData(strategyPnlData)
-    : {
-        'MEGA': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
-        'DOWN': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
-        'Z00M': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
-        'DUMP': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }
-      };
+  // Generate performance data with fallback
+  const performanceData = (() => {
+    // Default fallback data
+    const fallbackData = {
+      'MEGA': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+      'DOWN': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+      'Z00M': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] },
+      'DUMP': { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }
+    };
+
+    // If we have real data and loading finished, use it
+    if (strategyPnlData && !isLoadingPnl) {
+      try {
+        return formatPerformanceData(strategyPnlData);
+      } catch (err) {
+        console.error("Error formatting performance data:", err);
+        return fallbackData;
+      }
+    }
+    return fallbackData;
+  })();
   
   const isLoading = isLoadingStrategies || isLoadingPnl;
   
@@ -131,6 +159,15 @@ const PerformanceDashboard: React.FC = () => {
             <div className="text-center">
               <span className="material-icons text-4xl text-red-500 mb-2">error</span>
               <p className="text-muted-foreground">Error loading performance data</p>
+              {errorMessage && <p className="text-xs text-muted-foreground mt-1">{errorMessage}</p>}
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="mt-2"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </Button>
             </div>
           ) : (
             <div className="text-center">
@@ -155,7 +192,7 @@ const PerformanceDashboard: React.FC = () => {
                 key={strategyId}
                 strategyId={strategyId}
                 strategy={strategies[strategyId]}
-                performance={performanceData[strategyId] || { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }}
+                performance={performanceData[strategyId as keyof typeof performanceData] || { change: 0, data: [50, 50, 50, 50, 50, 50, 50] }}
               />
             ))}
           </div>
