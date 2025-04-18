@@ -75,7 +75,7 @@ export function useAutoRebalance() {
     isLoading: isLoadingPnl,
     refetch: refetchPnl
   } = useQuery({
-    queryKey: ['strategy_pnl', address],
+    queryKey: ['pnl', address],
     queryFn: () => address ? getStrategyPnl(address) : Promise.resolve([]),
     enabled: !!address && isConnected,
     staleTime: 30000, // 30 seconds
@@ -133,7 +133,7 @@ export function useAutoRebalance() {
     },
     onSuccess: (data, strategyId) => {
       queryClient.invalidateQueries({ queryKey: ['positions'] });
-      queryClient.invalidateQueries({ queryKey: ['strategy_pnl'] });
+      queryClient.invalidateQueries({ queryKey: ['pnl'] });
       
       toast({
         title: "Strategy Rebalanced",
@@ -149,18 +149,9 @@ export function useAutoRebalance() {
     }
   });
   
-  // WebSocket for real-time market data and auto-rebalancing
-  useWebSocket('/ws', {
-    onOpen: () => {
-      console.log('Connected to rebalancing WebSocket');
-    },
-    onMessage: (data) => {
-      if (data.type === 'market_update' && config.enabled) {
-        // Check if we need to rebalance based on new market data
-        checkRebalanceNeeded();
-      }
-    }
-  });
+  // Replace WebSocket with interval-based check
+  // WebSocket is now disabled, keeping the import for compatibility
+  useWebSocket('/ws');
   
   // Calculate allocations and check for rebalance needs
   const checkRebalanceNeeded = useCallback(() => {

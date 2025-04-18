@@ -9,7 +9,7 @@ export interface AssetsState {
 
 export function useAssets(): AssetsState {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/assets'],
+    queryKey: ['/assets'],
     queryFn: () => getAssets(),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

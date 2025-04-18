@@ -9,7 +9,8 @@ export interface StrategiesState {
 
 export function useStrategies(): StrategiesState {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/strategies'],
+    queryKey: ['strategies'],
+    queryFn: getStrategies,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
