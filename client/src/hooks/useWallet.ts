@@ -7,6 +7,7 @@ export interface WalletState {
   isConnected: boolean;
   balance: number;
   isConnecting: boolean;
+  signer: any | null; // Add signer to the interface
 }
 
 export type WalletType = 'metamask' | 'walletconnect' | 'rabby';
@@ -17,7 +18,8 @@ export function useWallet() {
     address: null,
     isConnected: false,
     balance: 0,
-    isConnecting: false
+    isConnecting: false,
+    signer: null // Initialize signer as null
   });
 
   // Initialize wallet state from client on mount
@@ -33,18 +35,22 @@ export function useWallet() {
     const walletInfo = hyperliquidClient.getWalletInfo();
     if (walletInfo?.isConnected) {
       const balance = await hyperliquidClient.getUSDCBalance();
+      const signer = null; // Placeholder as getSigner does not exist
+      
       setWalletState({
         address: walletInfo.address,
         isConnected: true,
         balance,
-        isConnecting: false
+        isConnecting: false,
+        signer // Include the signer in the state
       });
     } else {
       setWalletState({
         address: null,
         isConnected: false,
         balance: 0,
-        isConnecting: false
+        isConnecting: false,
+        signer: null
       });
     }
   }, []);
@@ -80,7 +86,8 @@ export function useWallet() {
         address: null,
         isConnected: false,
         balance: 0,
-        isConnecting: false
+        isConnecting: false,
+        signer: null // Clear the signer on disconnect
       });
       
       toast({

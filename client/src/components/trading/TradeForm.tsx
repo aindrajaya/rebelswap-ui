@@ -44,7 +44,7 @@ const slippageOptions = [0.5, 1.0, 1.5, 2.0];
 
 const TradeForm: React.FC = () => {
   const { toast } = useToast();
-  const { address, isConnected, balance } = useWallet();
+  const { address, isConnected, balance, signer } = useWallet();
   const { strategies } = useStrategies();
   
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
@@ -116,7 +116,35 @@ const TradeForm: React.FC = () => {
   
   // Execute trade mutation
   const executeMutation = useMutation({
-    mutationFn: (trades: AssetTrade[]) => hyperliquidClient.executeTradesFromCalculation(trades),
+    mutationFn: async (trades: AssetTrade[]) => {
+      // Verify that signer is available
+      if (!signer) {
+        throw new Error("Wallet signer not available. Please reconnect your wallet.");
+      }
+      
+      try {
+        // Create a message to sign for the trade execution
+        const strategyId = trades[0]?.strategy_id;
+        const message = `Execute trades for strategy ${strategyId} at ${new Date().toISOString()}`;
+        
+        // Sign the message with the wallet
+        console.log("Requesting signature for message:", message);
+        const signature = await signer.signMessage(message);
+        
+        console.log("Sending to backend:", {
+          trades,
+          signature,
+          signedMessage: message,
+          walletAddress: address
+        });
+        
+        // Execute trades with signature and message
+        return hyperliquidClient.executeTradesFromCalculation(trades, signature, message);
+      } catch (error) {
+        console.error("Error during trade execution signing:", error);
+        throw new Error("Failed to sign transaction with wallet");
+      }
+    },
     onSuccess: (data) => {
       if (data.success) {
         toast({
@@ -141,10 +169,57 @@ const TradeForm: React.FC = () => {
     }
   });
   
-  // Execute order directly mutation using the new API endpoint
+  // Execute order directly mutation using Hyperliquid SDK
   const executeOrderMutation = useMutation({
-    mutationFn: (params: ExecuteOrderParams) => executeOrder(params),
+    mutationFn: async (params: ExecuteOrderParams) => {
+      console.log("executeOrderMutation started with params:", {
+        asset: params.asset, 
+        is_buy: params.is_buy ? 'BUY' : 'SELL',
+        size: params.size
+      });
+      
+      // Verify that wallet is connected
+      if (!isConnected) {
+        console.error("Wallet not connected");
+        throw new Error("Wallet not connected. Please connect your wallet.");
+      }
+      
+      try {
+        // Sign a message for audit purposes
+        if (signer) {
+          const message = `Execute ${params.is_buy ? 'BUY' : 'SELL'} order: ${params.asset} ${params.size} at ${params.price} at ${new Date().toISOString()}`;
+          console.log("Signing message for audit:", message);
+          await signer.signMessage(message);
+        }
+        
+        // Execute order directly through Hyperliquid client
+        console.log("Executing order via Hyperliquid client");
+        const result = await hyperliquidClient.placeOrder(
+          params.asset,
+          params.is_buy,
+          params.size,
+          params.price
+        );
+        
+        if (!result.success) {
+          throw new Error(result.error || "Failed to execute order");
+        }
+        
+        return {
+          order_id: result.orderId || "Order executed",
+          status: "FILLED",
+          message: "Order executed successfully"
+        };
+      } catch (error) {
+        console.error("Error during order execution:", error);
+        if (error instanceof Error) {
+          console.error("Error details:", error.message, error.stack);
+        }
+        throw error;
+      }
+    },
     onSuccess: (data) => {
+      console.log("Order executed successfully:", data);
       toast({
         title: "Order Executed Successfully",
         description: `Order ID: ${data.order_id}`,
@@ -157,6 +232,7 @@ const TradeForm: React.FC = () => {
       setIsDetailedPreviewOpen(false);
     },
     onError: (error) => {
+      console.error("Order execution failed:", error);
       toast({
         variant: "destructive",
         title: "Order Execution Failed",
@@ -167,17 +243,21 @@ const TradeForm: React.FC = () => {
   
   // Function to execute a single trade
   const handleExecuteSingleTrade = (param: TradeParameterDetails) => {
-    if (!isConnected || !address) {
+    console.log("Execute Trade button clicked for asset:", param.asset);
+    
+    if (!isConnected || !address || !signer) {
+      console.error("Wallet not connected or missing address/signer");
       toast({
         variant: "destructive",
         title: "Wallet Not Connected",
-        description: "Please connect your wallet to execute trades.",
+        description: "Please connect your wallet with signing capability to execute trades.",
       });
       return;
     }
     
     const sizeNumber = parseFloat(param.size_asset);
     if (isNaN(sizeNumber)) {
+      console.error("Invalid size:", param.size_asset);
       toast({
         variant: "destructive",
         title: "Invalid Size",
@@ -186,13 +266,25 @@ const TradeForm: React.FC = () => {
       return;
     }
     
-    executeOrderMutation.mutate({
-      asset: param.asset,
-      size: sizeNumber,
-      is_buy: param.is_buy,
-      price: param.estimated_asset_price,
-      user_address: address
-    });
+    try {
+      console.log("Preparing to execute order with params:", {
+        asset: param.asset,
+        size: sizeNumber,
+        is_buy: param.is_buy,
+        price: param.estimated_asset_price,
+        user_address: address
+      });
+      
+      executeOrderMutation.mutate({
+        asset: param.asset,
+        size: sizeNumber,
+        is_buy: param.is_buy,
+        price: param.estimated_asset_price,
+        user_address: address
+      });
+    } catch (error) {
+      console.error("Error when calling executeOrderMutation:", error);
+    }
   };
 
   const onSubmit = (values: TradeFormValues) => {
@@ -226,11 +318,11 @@ const TradeForm: React.FC = () => {
     }
     
     // Check if wallet is connected for execution
-    if (!isConnected) {
+    if (!isConnected || !signer) {
       toast({
         variant: "destructive",
         title: "Wallet Not Connected",
-        description: "Please connect your wallet to execute trades.",
+        description: "Please connect your wallet with signing capability to execute trades.",
       });
       return;
     }

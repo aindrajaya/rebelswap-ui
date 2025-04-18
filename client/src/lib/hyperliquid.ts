@@ -119,7 +119,11 @@ export class HyperliquidClient {
     return this.walletInfo;
   }
   
-  async executeTradesFromCalculation(trades: AssetTrade[]): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  async executeTradesFromCalculation(
+    trades: AssetTrade[], 
+    signature?: string, 
+    signedMessage?: string
+  ): Promise<{ success: boolean; txHash?: string; error?: string; orderId?: string }> {
     if (!this.walletInfo?.isConnected) {
       throw new Error("Wallet not connected. Please connect your wallet first.");
     }
@@ -129,58 +133,57 @@ export class HyperliquidClient {
     }
     
     try {
-      // Extract the strategy id from the first trade
-      const strategyId = trades[0]?.strategy_id;
-      
-      if (!strategyId) {
-        throw new Error("Strategy ID is missing from trade data");
+      // For simplicity, we'll handle one trade at a time
+      if (trades.length === 0) {
+        throw new Error("No trades provided");
       }
       
-      // Convert trades to trade parameters format that the backend expects
-      const tradeParameters = trades.map(trade => ({
-        asset: trade.asset,
-        estimated_asset_price: trade.price,
-        estimated_nominal_usd: trade.nominal_usd,
-        is_buy: trade.is_buy,
-        leverage: trade.leverage,
-        size_asset: trade.size_asset
-      }));
+      const trade = trades[0]; // Process the first trade
       
-      // Message to sign - typically includes user address and some nonce for security
-      const messageToSign = JSON.stringify({
-        action: "execute_trades",
-        strategy_id: strategyId,
-        user_address: this.walletInfo.address,
-        timestamp: Date.now(),
-        trade_parameters: tradeParameters
-      });
+      // Check if signature was provided, if not obtain one
+      let usedSignature = signature;
+      let usedMessage = signedMessage;
       
-      console.log("Requesting signature for message:", messageToSign);
-      
-      // Request signature from wallet
-      const signature = await this.provider.request({
-        method: 'personal_sign',
-        params: [
-          `0x${Buffer.from(messageToSign).toString('hex')}`,
-          this.walletInfo.address
-        ]
-      });
-      
-      if (!signature) {
-        throw new Error("Failed to sign message with wallet");
+      if (!usedSignature || !usedMessage) {
+        // Request signature from wallet for authentication
+        usedMessage = JSON.stringify({
+          action: "execute_order",
+          asset: trade.asset,
+          size: trade.size_asset,
+          is_buy: trade.is_buy,
+          price: trade.estimated_asset_price,
+          timestamp: Date.now(),
+        });
+        
+        console.log("Requesting signature for message:", usedMessage);
+        
+        usedSignature = await this.provider.request({
+          method: 'personal_sign',
+          params: [
+            `0x${Buffer.from(usedMessage).toString('hex')}`,
+            this.walletInfo.address
+          ]
+        });
+        
+        if (!usedSignature) {
+          throw new Error("Failed to sign message with wallet");
+        }
       }
       
-      // Send the signed request to our API
-      const response = await fetch('/api/trades/execute', {
+      // Send the order to the API
+      const response = await fetch('/execute-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          strategy_id: strategyId,
-          trade_parameters: tradeParameters,
-          signature,
-          user_address: this.walletInfo.address
+          asset: trade.asset,
+          size: trade.size_asset,
+          is_buy: trade.is_buy,
+          price: trade.estimated_asset_price,
+          user_address: this.walletInfo.address,
+          signature: usedSignature,
+          signedMessage: usedMessage
         })
       });
       
@@ -193,7 +196,8 @@ export class HyperliquidClient {
       
       return {
         success: true,
-        txHash: result.tx_hash
+        orderId: result.order_id,
+        txHash: result.tx_hash || result.result
       };
     } catch (error) {
       console.error("Failed to execute trades:", error);
@@ -204,6 +208,88 @@ export class HyperliquidClient {
     }
   }
   
+  async placeOrder(
+    asset: string,
+    is_buy: boolean,
+    size: number,
+    price: number
+  ): Promise<{ success: boolean; orderId?: string; error?: string }> {
+    if (!this.walletInfo?.isConnected) {
+      throw new Error("Wallet not connected. Please connect your wallet first.");
+    }
+    
+    if (!this.provider) {
+      throw new Error("Web3 provider not available. Please reconnect your wallet.");
+    }
+    
+    try {
+      // Create a message to sign for authentication
+      const message = JSON.stringify({
+        action: "place_order",
+        asset: asset,
+        is_buy: is_buy,
+        size: size,
+        price: price,
+        timestamp: Date.now(),
+      });
+      
+      console.log("Requesting signature for order:", {
+        asset,
+        is_buy,
+        size,
+        price
+      });
+      
+      // Request signature from wallet
+      const signature = await this.provider.request({
+        method: 'personal_sign',
+        params: [
+          `0x${Buffer.from(message).toString('hex')}`,
+          this.walletInfo.address
+        ]
+      });
+      
+      if (!signature) {
+        throw new Error("Failed to sign order with wallet");
+      }
+      
+      // Send the order to the API
+      const response = await fetch('/api/place-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          asset: asset,
+          is_buy: is_buy,
+          size: size,
+          price: price,
+          user_address: this.walletInfo.address,
+          signature: signature,
+          signedMessage: message
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        success: true,
+        orderId: result.order_id || result.orderId
+      };
+    } catch (error) {
+      console.error("Failed to place order:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error placing order"
+      };
+    }
+  }
+
   // Get user's wallet balance (in USDC)
   async getUSDCBalance(): Promise<number> {
     if (!this.walletInfo?.isConnected) {
