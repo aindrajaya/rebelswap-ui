@@ -5,7 +5,7 @@ const Footer: React.FC = () => {
     <footer className="bg-background/95 backdrop-blur-sm border-t border-neutral-800 py-4 px-6">
       <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
         <div className="mb-3 md:mb-0">
-          <span className="text-sm text-muted-foreground">© 2023 RebelSwap. All rights reserved.</span>
+          <span className="text-sm text-muted-foreground">© 2025 RebelSwap. All rights reserved.</span>
         </div>
         <div className="flex space-x-6">
           <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Terms</a>
