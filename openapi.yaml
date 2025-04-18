@@ -1,0 +1,879 @@
+openapi: 3.0.0
+info:
+  title: Hyperliquid API (RebelSwap Backend)
+  version: "1.0.0"
+  description: |-
+    API for interacting with Hyperliquid, providing market data, balance/position info,
+    and trade calculation/execution functionalities, specifically tailored for RebelSwap strategies.
+    Built using Flask and the Hyperliquid Python SDK.
+servers:
+  - url: http://0.0.0.0:5000
+    description: Local development server
+paths:
+  /status:
+    get:
+      summary: Health Check
+      description: Verifies the API status and provides basic configuration info.
+      tags:
+        - General
+      responses:
+        '200':
+          description: API is operational.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "OK"
+                  message:
+                    type: string
+                    example: "Hyperliquid Info client initialized. Backend is READ-ONLY."
+                  info_client_target_url:
+                    type: string
+                    format: url
+                    example: "https://api.hyperliquid-testnet.xyz"
+                  configured_monitor_address_FOR_INFO_ONLY:
+                    type: string
+                    example: "0xYourAddress"
+                  supported_assets_count:
+                    type: integer
+                    example: 50
+                  available_strategies:
+                    type: array
+                    items:
+                      type: string
+                    example: ["MEGA", "DOWN", "Z00M", "DUMP"]
+        '503':
+          description: Service Unavailable (e.g., Hyperliquid client initialization failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /assets:
+    get:
+      summary: Get Available Assets
+      description: Returns the list of asset names available in Hyperliquid metadata.
+      tags:
+        - Market Data
+      responses:
+        '200':
+          description: A list of asset names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["BTC", "ETH", "SOL", "kDOGS", "kSHIB", "kPEPE", "kBONK", "WIF"]
+        '503':
+          description: Service Unavailable (e.g., Hyperliquid client initialization failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /strategies:
+    get:
+      summary: Get RebelSwap Strategies
+      description: Returns the definitions of available RebelSwap strategies.
+      tags:
+        - RebelSwap
+      responses:
+        '200':
+          description: Dictionary of strategy IDs mapped to their details.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/StrategyDefinition'
+                example:
+                  MEGA:
+                    ticker: "MEGA"
+                    description: "3x Long BTC, ETH, SOL (equal weight)"
+                    assets: ["BTC", "ETH", "SOL"]
+                    direction: "long"
+                    leverage: 3
+                    weighting: "equal"
+                  DOWN:
+                    ticker: "DOWN"
+                    description: "3x Short BTC, ETH, SOL (equal weight)"
+                    assets: ["BTC", "ETH", "SOL"]
+                    direction: "short"
+                    leverage: 3
+                    weighting: "equal"
+        '500':
+          description: Internal Server Error (e.g., strategies not configured).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /trades/calculate:
+    post:
+      summary: Calculate RebelSwap Trade Parameters
+      description: Calculates the individual trade parameters needed for a RebelSwap strategy based on total USD size (pre-leverage).
+      tags:
+        - RebelSwap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateTradeRequest'
+            example:
+              strategy_id: "MEGA"
+              total_usd_size: 1000
+              user_address: "0xYourAddress" # Optional context
+      responses:
+        '200':
+          description: Calculated trade parameters for the strategy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculateTradeResponse'
+        '400':
+          description: Bad Request (e.g., validation failed, invalid input).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error (e.g., price fetch failed, calculation error).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable (e.g., Hyperliquid client initialization failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /pnl/{user_address}:
+    get:
+      summary: Get User P/L for RebelSwap Strategies
+      description: Calculates the aggregated unrealized P/L for a user based on open positions matching assets in defined RebelSwap strategies.
+      tags:
+        - User Data
+        - RebelSwap
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Aggregated P/L details per strategy and total.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PnlResponse'
+        '404':
+           description: User state not found for the given address.
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /balance/{user_address}:
+    get:
+      summary: Get User Account Balance
+      description: Fetches the account balance summary for a specific user address.
+      tags:
+        - User Data
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User account balance summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '404':
+           description: User state not found for the given address.
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /positions/{user_address}:
+    get:
+      summary: Get User Open Positions
+      description: Fetches detailed open position info for the specified user address.
+      tags:
+        - User Data
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of the user's open positions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+        '404':
+          description: User state not found for the given address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /positions/{user_address}/{asset_symbol}:
+    get:
+      summary: Get User Open Position for a Specific Asset
+      description: Fetches detailed open position info for the specified address and asset symbol.
+      tags:
+        - User Data
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+        - name: asset_symbol
+          in: path
+          required: true
+          description: The symbol of the asset (e.g., BTC, ETH).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list containing the user's open position for the specified asset (or empty list if none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+        '404':
+          description: User state not found for the given address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orders/open/{user_address}:
+    get:
+      summary: Get User Open Orders
+      description: Fetches all open (resting) orders for the specified address.
+      tags:
+        - User Data
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of open orders.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenOrder' # Assuming a schema definition
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /market-data:
+    get:
+      summary: Get Market Data
+      description: Fetches real-time market data (mid-prices) for a predefined list of assets.
+      tags:
+        - Market Data
+      responses:
+        '200':
+          description: Market data for specified assets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketDataResponse'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /execute-order:
+    post:
+      summary: Execute Order
+      description: Executes a market or limit order with retry logic (requires pre-stored keys).
+      tags:
+        - Trading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteOrderRequest'
+      responses:
+        '200':
+          description: Order execution successful (or initiated).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteOrderResponse'
+        '400':
+          description: Bad Request (e.g., missing parameters).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Private key not found for the user address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error or failed to place order after retries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable (Exchange client not initialized).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/store-keys:
+    post:
+      summary: Store User Keys (Insecure)
+      description: Stores a user's address and private key in memory. WARNING - Highly insecure, for development/testing ONLY.
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreKeysRequest'
+      responses:
+        '200':
+          description: Keys stored successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Keys stored successfully"
+        '400':
+          description: Bad Request (e.g., missing address or key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /rebalance/config/{user_address}:
+    post:
+      summary: Configure Auto-Rebalancing
+      description: Enable or update auto-rebalancing settings for a user (requires pre-stored keys).
+      tags:
+        - Rebalancing
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebalanceConfigRequest'
+      responses:
+        '200':
+          description: Rebalance configuration updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebalanceConfigResponse'
+        '400':
+          description: Bad Request (validation failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: Get Auto-Rebalancing Configuration
+      description: Retrieves the current auto-rebalancing configuration for a user.
+      tags:
+        - Rebalancing
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current rebalance configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebalanceConfigResponse' # Can reuse the response schema
+        '404':
+          description: No configuration found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Disable Auto-Rebalancing
+      description: Disables auto-rebalancing for a user.
+      tags:
+        - Rebalancing
+      parameters:
+        - name: user_address
+          in: path
+          required: true
+          description: Ethereum address of the user (e.g., 0x...).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Auto-rebalancing disabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Auto-rebalancing disabled."
+        '404':
+          description: No configuration found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: A high-level error message.
+        details:
+          type: string
+          description: More specific details about the error (optional).
+        missing_assets: # Example specific detail
+          type: array
+          items:
+            type: string
+          description: List of assets missing data (optional).
+      required:
+        - error
+
+    StrategyDefinition:
+      type: object
+      properties:
+        ticker:
+          type: string
+        description:
+          type: string
+        assets:
+          type: array
+          items:
+            type: string
+        direction:
+          type: string
+          enum: [long, short]
+        leverage:
+          type: number
+        weighting:
+          type: string
+          enum: [equal] # Assuming only equal for now
+      required:
+        - ticker
+        - description
+        - assets
+        - direction
+        - leverage
+        - weighting
+
+    CalculateTradeRequest:
+      type: object
+      properties:
+        strategy_id:
+          type: string
+          description: The ID of the strategy (e.g., "MEGA", "DOWN").
+        total_usd_size:
+          type: number
+          format: float
+          description: The total desired USD value *before* leverage (e.g., collateral allocation).
+        user_address:
+          type: string
+          description: (Optional) User address for logging/context. NOT used for execution.
+      required:
+        - strategy_id
+        - total_usd_size
+
+    CalculateTradeResponse:
+      type: object
+      properties:
+        strategy_id:
+          type: string
+        user_address_context:
+          type: string
+        calculation_timestamp_utc:
+          type: string
+          format: date-time
+        trade_parameters:
+          type: array
+          items:
+            type: object
+            properties:
+              asset:
+                type: string
+              is_buy:
+                type: boolean
+              size_asset:
+                type: string # String to handle precision
+              leverage:
+                type: number
+              estimated_nominal_usd:
+                type: number
+                format: float
+              estimated_asset_price:
+                type: number
+                format: float
+        message:
+          type: string
+
+    PnlResponse: # Placeholder for /pnl/{user_address}
+      type: object
+      properties:
+        user_address:
+          type: string
+        strategy_pnl:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              current_pnl_usd:
+                type: number
+                format: float
+              positions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PositionSummary' # Simplified position view
+        total_pnl_usd:
+          type: number
+          format: float
+        calculation_timestamp_utc:
+          type: string
+          format: date-time
+        message:
+          type: string # Optional message
+
+    BalanceResponse: # Placeholder for /balance/{user_address}
+      type: object
+      properties:
+        address:
+          type: string
+        account_value_usd:
+          type: number
+          format: float
+        total_raw_usd:
+          type: number
+          format: float
+        total_notional_position_usd:
+          type: number
+          format: float
+        total_margin_used_usd:
+          type: number
+          format: float
+
+    Position: # Detailed position info for /positions/...
+      type: object
+      properties:
+        asset:
+          type: string
+        size:
+          type: string # String for precision
+        entry_price:
+          type: number
+          format: float
+          nullable: true
+        unrealized_pnl:
+          type: number
+          format: float
+        margin_used:
+          type: number
+          format: float
+        leverage_type:
+          type: string
+          nullable: true
+        leverage_value:
+          type: integer
+        liquidation_price:
+          type: number
+          format: float
+          nullable: true
+        return_on_equity:
+          type: number
+          format: float
+          nullable: true
+
+    PositionSummary: # Simplified position for PnL response
+      type: object
+      properties:
+        asset:
+          type: string
+        size:
+          type: string
+        entry_price:
+          type: number
+          format: float
+          nullable: true
+        unrealized_pnl:
+          type: number
+          format: float
+        leverage_value:
+          type: integer
+          nullable: true
+        liquidation_price:
+          type: number
+          format: float
+          nullable: true
+
+    OpenOrder: # Placeholder for /orders/open/...
+      type: object
+      # Add properties based on what info_client.open_orders() returns
+      # Example properties:
+      properties:
+        oid:
+          type: integer
+        asset:
+          type: string
+        side:
+          type: string # e.g., "B" or "S"
+        limitPx:
+          type: string # Price as string
+        sz:
+          type: string # Size as string
+        timestamp:
+          type: integer # Milliseconds?
+
+    MarketDataResponse: # Placeholder for /market-data
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          mid_price:
+            type: string # Or number, depending on API response
+
+    ExecuteOrderRequest: # Placeholder for /execute-order
+      type: object
+      properties:
+        asset:
+          type: string
+        size:
+          type: number # Or string? Check go.py usage
+        is_buy:
+          type: boolean
+        price:
+          type: number # Optional for limit orders
+          format: float
+          nullable: true
+        user_address:
+          type: string
+      required:
+        - asset
+        - size
+        - user_address
+        # is_buy defaults to false if omitted
+
+    ExecuteOrderResponse: # Placeholder for /execute-order
+      type: object
+      properties:
+        success:
+          type: boolean
+        order_id:
+          type: integer # Or string? Check API response
+          nullable: true
+        result:
+          type: object # The raw result from the exchange client
+        error: # Include error field if success is false
+          type: string
+          nullable: true
+        last_result: # Include last attempt result on failure
+          type: object
+          nullable: true
+
+    StoreKeysRequest: # Placeholder for /api/store-keys
+      type: object
+      properties:
+        address:
+          type: string
+        privateKey:
+          type: string
+      required:
+        - address
+        - privateKey
+
+    RebalanceConfigRequest: # Placeholder for POST /rebalance/config/...
+      type: object
+      properties:
+        strategy_id:
+          type: string
+        enabled:
+          type: boolean
+          default: true
+        threshold_percent:
+          type: number
+          format: float
+          nullable: true # Uses default if null
+      required:
+        - strategy_id
+        # enabled defaults to true
+        # threshold_percent defaults on server
+
+    RebalanceConfigResponse: # Placeholder for GET and POST /rebalance/config/...
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        strategy_id:
+          type: string
+        threshold_percent:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [idle, rebalancing, error, disabled]
+        last_check_time:
+          type: number # Unix timestamp
+          format: float
+        last_rebalance_time:
+          type: number # Unix timestamp
+          format: float
+        error_message:
+          type: string
+          nullable: true
+        current_server_time: # Added by GET endpoint
+          type: number
+          format: float
+          nullable: true
