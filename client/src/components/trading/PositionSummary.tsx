@@ -148,19 +148,19 @@ const PositionSummary: React.FC = () => {
                   </span>
                 </div>
                 <div className={`text-xs px-2 py-1 ${
-                  position.pnlPct > 0 
+                  (position.pnlPct || 0) > 0 
                     ? 'bg-green-500/20 text-green-500' 
                     : 'bg-red-500/20 text-red-500'
                 } rounded`}>
-                  {position.pnlPct > 0 ? '+' : ''}{position.pnlPct.toFixed(2)}%
+                  {(position.pnlPct || 0) > 0 ? '+' : ''}{(position.pnlPct || 0).toFixed(2)}%
                 </div>
               </div>
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>{position.description}</span>
                 <div className="text-right">
-                  <div>${position.value.toFixed(2)}</div>
-                  <div className={position.pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
-                    {position.pnl >= 0 ? '+' : ''}{position.pnl.toFixed(2)} USDC
+                  <div>${(position.value || 0).toFixed(2)}</div>
+                  <div className={(position.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                    {(position.pnl || 0) >= 0 ? '+' : ''}{(position.pnl || 0).toFixed(2)} USDC
                   </div>
                 </div>
               </div>
