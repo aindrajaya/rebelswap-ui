@@ -129,32 +129,71 @@ export class HyperliquidClient {
     }
     
     try {
-      // Format the trades for Hyperliquid API
-      // This would call external Hyperliquid API for trade execution
-      console.log(`Executing trades for address ${this.walletInfo.address}`, trades);
+      // Extract the strategy id from the first trade
+      const strategyId = trades[0]?.strategy_id;
       
-      // In a real implementation:
-      // 1. Prepare transaction data
-      const txData = {
-        from: this.walletInfo.address,
-        // ... other tx data specific to Hyperliquid API
-      };
+      if (!strategyId) {
+        throw new Error("Strategy ID is missing from trade data");
+      }
       
-      // 2. Request signature from wallet
-      // This is commented out as we don't have the actual Hyperliquid API integration yet
-      // const txHash = await this.provider.request({
-      //   method: 'eth_sendTransaction',
-      //   params: [txData],
-      // });
+      // Convert trades to trade parameters format that the backend expects
+      const tradeParameters = trades.map(trade => ({
+        asset: trade.asset,
+        estimated_asset_price: trade.price,
+        estimated_nominal_usd: trade.nominal_usd,
+        is_buy: trade.is_buy,
+        leverage: trade.leverage,
+        size_asset: trade.size_asset
+      }));
       
-      // For development, we'll simulate a transaction
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Message to sign - typically includes user address and some nonce for security
+      const messageToSign = JSON.stringify({
+        action: "execute_trades",
+        strategy_id: strategyId,
+        user_address: this.walletInfo.address,
+        timestamp: Date.now(),
+        trade_parameters: tradeParameters
+      });
       
-      // Return a simulated transaction hash
-      // This would be the actual txHash in production
+      console.log("Requesting signature for message:", messageToSign);
+      
+      // Request signature from wallet
+      const signature = await this.provider.request({
+        method: 'personal_sign',
+        params: [
+          `0x${Buffer.from(messageToSign).toString('hex')}`,
+          this.walletInfo.address
+        ]
+      });
+      
+      if (!signature) {
+        throw new Error("Failed to sign message with wallet");
+      }
+      
+      // Send the signed request to our API
+      const response = await fetch('/api/trades/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          strategy_id: strategyId,
+          trade_parameters: tradeParameters,
+          signature,
+          user_address: this.walletInfo.address
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
       return {
         success: true,
-        txHash: `0x${Math.random().toString(16).slice(2, 50)}`
+        txHash: result.tx_hash
       };
     } catch (error) {
       console.error("Failed to execute trades:", error);
@@ -174,9 +213,17 @@ export class HyperliquidClient {
     try {
       // Get balance from API endpoint with real user address
       const balanceData = await getUserBalance(this.walletInfo.address);
+      // Return the available balance
       return balanceData.available;
     } catch (error) {
       console.error("Failed to fetch USDC balance:", error);
+      
+      // Check if the backend might be unavailable or returning HTML instead of JSON
+      if (error instanceof SyntaxError && error.message.includes("Unexpected token '<'")) {
+        console.warn("Backend API appears to be unavailable or returning HTML instead of JSON. This typically happens when the API server is down or misconfigured.");
+        // Return 0 as a fallback value
+      }
+      
       return 0;
     }
   }
