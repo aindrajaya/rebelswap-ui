@@ -5,7 +5,8 @@ import { storage } from "./storage";
 import axios from "axios";
 
 // API endpoints for backend services
-const BACKEND_API_URL = "http://localhost:5000"; // Flask backend URL
+const BACKEND_API_URL = "https://hyperliquid-api.replit.app"; // Flask backend URL
+// const BACKEND_API_URL = "http://localhost:5000"; // Flask backend URL
 const USE_MOCK_DATA = false; // Use mock data instead of real data from Flask backend
 
 // For debugging
@@ -298,6 +299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Execute trades with wallet signer
   apiRouter.post("/trades/execute", async (req, res) => {
     try {
+      console.log("Trade execution request received:", req.body);
       const { strategy_id, trade_parameters, signature, user_address } = req.body;
       
       if (!strategy_id || !trade_parameters || !signature || !user_address) {
@@ -322,13 +324,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Forward the request to the backend with the signature
-      const response = await axios.post(`${BACKEND_API_URL}/trades/execute`, {
+      console.log("Executing trades with backend:", {
         strategy_id,
         trade_parameters,
         signature,
         user_address
       });
+      
+      // Forward the request to the backend with the signature
+      const response = await axios.post(`${BACKEND_API_URL}/execute-order`, {
+        strategy_id,
+        trade_parameters,
+        signature,
+        user_address
+      });
+      console.log("Trade execution response:", response.data);
       
       res.json(response.data);
     } catch (error) {
