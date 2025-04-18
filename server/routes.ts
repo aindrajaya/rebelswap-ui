@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import axios from "axios";
 
 // API endpoints for backend services
-const BACKEND_API_URL = "http://localhost:5000"; // Flask backend URL
+const BACKEND_API_URL = process.env.NODE_ENV === 'production' ? 'http://0.0.0.0:5000' : 'http://localhost:5000'; // Flask backend URL
 const USE_MOCK_DATA = false; // Use mock data instead of real data from Flask backend
 
 // For debugging
