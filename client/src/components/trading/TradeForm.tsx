@@ -4,15 +4,40 @@ import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import useWallet from '@/hooks/useWallet';
 import useStrategies from '@/hooks/useStrategies';
-import { calculateTrades, TradeCalculationParams, AssetTrade, TradeCalculationResult } from '@/lib/api';
+import { 
+  calculateTrades, 
+  TradeCalculationParams, 
+  AssetTrade, 
+  TradeCalculationResult,
+  executeOrder,
+  ExecuteOrderParams 
+} from '@/lib/api';
 import { hyperliquidClient } from '@/lib/hyperliquid';
 import StrategySelector from './StrategySelector';
 
 interface TradeFormValues {
   amount: string;
+}
+
+interface TradeParameterDetails {
+  asset: string;
+  estimated_asset_price: number;
+  estimated_nominal_usd: number;
+  is_buy: boolean;
+  leverage: number;
+  size_asset: string;
+}
+
+interface TradeCalculationDetails {
+  calculation_timestamp_utc: string;
+  message: string;
+  strategy_id: string;
+  trade_parameters: TradeParameterDetails[];
+  user_address_context?: string;
 }
 
 const slippageOptions = [0.5, 1.0, 1.5, 2.0];
@@ -26,6 +51,9 @@ const TradeForm: React.FC = () => {
   const [slippage, setSlippage] = useState(1.5);
   const [tradePreview, setTradePreview] = useState<AssetTrade[] | null>(null);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [isPreviewMode, setIsPreviewMode] = useState(true);
+  const [isDetailedPreviewOpen, setIsDetailedPreviewOpen] = useState(false);
+  const [detailedTradeData, setDetailedTradeData] = useState<TradeCalculationDetails | null>(null);
   
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<TradeFormValues>({
     defaultValues: {
@@ -38,14 +66,44 @@ const TradeForm: React.FC = () => {
   // Reset the preview when inputs change
   useEffect(() => {
     setTradePreview(null);
+    setIsPreviewMode(true);
   }, [amount, selectedStrategy]);
   
   // Calculate trade mutation
   const calculateMutation = useMutation({
-    mutationFn: (params: TradeCalculationParams) => calculateTrades(params),
+    mutationFn: (params: TradeCalculationParams) => {
+      console.log("Sending trade calculation request with strategy:", params.strategy_id);
+      return calculateTrades(params);
+    },
     onSuccess: (data: TradeCalculationResult) => {
-      setTradePreview(data.trades);
-      setTotalAmount(data.total_nominal_usd);
+      // Log the full API response data for debugging
+      console.log("Preview Trade API response:", data);
+      
+      // Log the strategy ID and assets received to check for mismatch
+      console.log("Strategy requested:", selectedStrategy);
+      if (data.trade_parameters) {
+        console.log("Assets in response:", data.trade_parameters.map(p => p.asset).join(', '));
+      }
+      
+      // Ensure backward compatibility for old code
+      if (data.trades) {
+        setTradePreview(data.trades);
+      }
+      
+      if (data.total_nominal_usd) {
+        setTotalAmount(data.total_nominal_usd);
+      } else if (data.trade_parameters) {
+        // Calculate total from trade parameters if total_nominal_usd is not provided
+        setTotalAmount(data.trade_parameters.reduce(
+          (sum, param) => sum + param.estimated_nominal_usd, 0
+        ));
+      }
+      
+      setIsPreviewMode(false);
+      
+      // Set detailed trade data directly from the API response
+      setDetailedTradeData(data);
+      setIsDetailedPreviewOpen(true);
     },
     onError: (error) => {
       toast({
@@ -69,6 +127,7 @@ const TradeForm: React.FC = () => {
         // Reset form
         setValue('amount', '');
         setTradePreview(null);
+        setIsPreviewMode(true);
       } else {
         throw new Error(data.error || "Unknown error");
       }
@@ -82,6 +141,60 @@ const TradeForm: React.FC = () => {
     }
   });
   
+  // Execute order directly mutation using the new API endpoint
+  const executeOrderMutation = useMutation({
+    mutationFn: (params: ExecuteOrderParams) => executeOrder(params),
+    onSuccess: (data) => {
+      toast({
+        title: "Order Executed Successfully",
+        description: `Order ID: ${data.order_id}`,
+      });
+      
+      // Reset form
+      setValue('amount', '');
+      setTradePreview(null);
+      setIsPreviewMode(true);
+      setIsDetailedPreviewOpen(false);
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Order Execution Failed",
+        description: error instanceof Error ? error.message : "Failed to execute order",
+      });
+    }
+  });
+  
+  // Function to execute a single trade
+  const handleExecuteSingleTrade = (param: TradeParameterDetails) => {
+    if (!isConnected || !address) {
+      toast({
+        variant: "destructive",
+        title: "Wallet Not Connected",
+        description: "Please connect your wallet to execute trades.",
+      });
+      return;
+    }
+    
+    const sizeNumber = parseFloat(param.size_asset);
+    if (isNaN(sizeNumber)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Size",
+        description: "Trade size is invalid",
+      });
+      return;
+    }
+    
+    executeOrderMutation.mutate({
+      asset: param.asset,
+      size: sizeNumber,
+      is_buy: param.is_buy,
+      price: param.estimated_asset_price,
+      user_address: address
+    });
+  };
+
   const onSubmit = (values: TradeFormValues) => {
     if (!selectedStrategy) {
       toast({
@@ -102,24 +215,55 @@ const TradeForm: React.FC = () => {
       return;
     }
     
-    // If we already have a preview, execute the trade
-    if (tradePreview) {
-      executeMutation.mutate(tradePreview);
+    // If we are in preview mode, calculate the preview
+    if (isPreviewMode) {
+      calculateMutation.mutate({
+        strategy_id: selectedStrategy,
+        total_usd_size: amountNum,
+        user_address: address || undefined
+      });
       return;
     }
     
-    // Otherwise calculate the preview
-    calculateMutation.mutate({
-      strategy_id: selectedStrategy,
-      total_usd_size: amountNum,
-      user_address: address || undefined
-    });
+    // Check if wallet is connected for execution
+    if (!isConnected) {
+      toast({
+        variant: "destructive",
+        title: "Wallet Not Connected",
+        description: "Please connect your wallet to execute trades.",
+      });
+      return;
+    }
+    
+    // If we have detailed trade data from the API, use it for execution
+    if (detailedTradeData) {
+      // Convert trade parameters to trades format
+      const tradesFromDetails = detailedTradeData.trade_parameters.map(param => ({
+        asset: param.asset,
+        is_buy: param.is_buy,
+        leverage: param.leverage,
+        price: param.estimated_asset_price,
+        size_asset: param.size_asset,
+        estimated_nominal_usd: param.estimated_nominal_usd,
+        strategy_id: detailedTradeData.strategy_id
+      }));
+      
+      executeMutation.mutate(tradesFromDetails);
+    } else if (tradePreview) {
+      // Fallback to older format if detailed data is not available
+      executeMutation.mutate(tradePreview);
+    }
   };
   
   const handleSetMaxAmount = () => {
     if (balance > 0) {
       setValue('amount', balance.toString());
     }
+  };
+  
+  const handleResetPreview = () => {
+    setTradePreview(null);
+    setIsPreviewMode(true);
   };
   
   const getDirectionLabel = (isBuy: boolean) => {
@@ -147,6 +291,19 @@ const TradeForm: React.FC = () => {
       {/* Trade Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="mt-6">
         <h3 className="text-lg font-medium mb-3">Trade Configuration</h3>
+        
+        {/* Connection Warning */}
+        {!isConnected && (
+          <div className="mb-4 p-3 rounded-lg bg-yellow-900/30 border border-yellow-700 text-yellow-500 text-sm">
+            <div className="flex items-start">
+              <span className="material-icons text-lg mr-2">warning</span>
+              <div>
+                <p>You need to connect your wallet to execute trades.</p>
+                <p className="text-xs mt-1">Preview is still available without connecting.</p>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Selected Strategy Display */}
         {selectedStrategy && strategy && (
@@ -240,7 +397,16 @@ const TradeForm: React.FC = () => {
         <div>
           {tradePreview && (
             <div className="mb-4 p-4 bg-background rounded-lg border border-neutral-700">
-              <h4 className="font-medium mb-2">Trade Preview</h4>
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-medium">Trade Preview</h4>
+                <button 
+                  type="button" 
+                  className="text-xs text-muted-foreground hover:text-white"
+                  onClick={handleResetPreview}
+                >
+                  <span className="material-icons text-sm">refresh</span>
+                </button>
+              </div>
               <div className="space-y-2 text-sm">
                 {tradePreview.map((trade, index) => (
                   <div key={index} className="flex justify-between items-center">
@@ -263,7 +429,7 @@ const TradeForm: React.FC = () => {
           <Button
             type="submit"
             className={`w-full py-3 ${
-              tradePreview 
+              !isPreviewMode 
                 ? 'bg-green-600 hover:bg-green-700' 
                 : 'bg-primary hover:bg-primary/80'
             }`}
@@ -279,7 +445,7 @@ const TradeForm: React.FC = () => {
                 <span className="animate-spin inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2"></span>
                 Executing...
               </>
-            ) : tradePreview ? (
+            ) : !isPreviewMode ? (
               'Execute Trade'
             ) : (
               'Preview Trade'
@@ -287,6 +453,98 @@ const TradeForm: React.FC = () => {
           </Button>
         </div>
       </form>
+
+      {/* Detailed Trade Preview Dialog */}
+      <Dialog open={isDetailedPreviewOpen} onOpenChange={setIsDetailedPreviewOpen}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Trade Calculation Details</DialogTitle>
+          </DialogHeader>
+          
+          {detailedTradeData && (
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium">Strategy</span>
+                <span className="font-bold">{detailedTradeData.strategy_id}</span>
+              </div>
+              
+              <div className="flex items-center justify-between mb-3 text-xs">
+                <span className="text-muted-foreground">Calculation Time</span>
+                <span>{new Date(detailedTradeData.calculation_timestamp_utc).toLocaleString()}</span>
+              </div>
+              
+              <div className="bg-neutral-800/50 p-3 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-2">Message</div>
+                <div className="text-sm">{detailedTradeData.message}</div>
+              </div>
+              
+              <div className="mt-4">
+                <h3 className="text-sm font-medium mb-3">Trade Parameters</h3>
+                <div className="space-y-3">
+                  {detailedTradeData.trade_parameters.map((param, index) => (
+                    <div key={index} className="bg-neutral-800/30 p-3 rounded-lg">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center">
+                          <span className="font-medium">{param.asset}</span>
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded ${param.is_buy ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                            {param.is_buy ? 'BUY' : 'SELL'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-teal-400">{param.leverage}x</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <div className="text-muted-foreground">Size</div>
+                          <div className="font-medium">{param.size_asset} {param.asset}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Est. Price</div>
+                          <div className="font-medium">${param.estimated_asset_price.toFixed(6)}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Est. Nominal USD</div>
+                          <div className="font-medium">${param.estimated_nominal_usd.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => handleExecuteSingleTrade(param)}
+                        className="mt-3 w-full"
+                        disabled={executeOrderMutation.isPending}
+                      >
+                        {executeOrderMutation.isPending ? (
+                          <>
+                            <span className="animate-spin inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2"></span>
+                            Executing...
+                          </>
+                        ) : (
+                          'Execute Trade'
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {detailedTradeData.user_address_context && (
+                <div className="text-xs text-muted-foreground mt-4">
+                  <div>User Address</div>
+                  <div className="font-mono break-all">{detailedTradeData.user_address_context}</div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter className="mt-6">
+            <Button 
+              onClick={() => setIsDetailedPreviewOpen(false)}
+              className="w-full"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
