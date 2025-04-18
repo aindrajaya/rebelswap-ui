@@ -8,6 +8,7 @@ import axios from "axios";
 const BACKEND_API_URL = "https://hyperliquid-api.replit.app"; // Flask backend URL
 // const BACKEND_API_URL = "http://localhost:5000"; // Flask backend URL
 const USE_MOCK_DATA = false; // Use mock data instead of real data from Flask backend
+console.log("Using backend API URL:", BACKEND_API_URL);
 
 // For debugging
 const DEBUG_LOG_REQUESTS = true; // Set to true to log request/response data for debugging
