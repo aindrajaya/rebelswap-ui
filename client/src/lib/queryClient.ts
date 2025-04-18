@@ -12,15 +12,34 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
-    method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
-
-  await throwIfResNotOk(res);
-  return res;
+  // Determine if this is a relative or absolute URL
+  let fullUrl;
+  if (url.startsWith('http')) {
+    fullUrl = url;
+  } else if (url.startsWith('/market-data')) {
+    fullUrl = url; // Don't prepend /api for market-data endpoints
+  } else {
+    fullUrl = `/api${url}`;
+  }
+  
+  console.log(`API Request: ${method} ${fullUrl}`);
+  
+  try {
+    const res = await fetch(fullUrl, {
+      method,
+      headers: data ? { "Content-Type": "application/json" } : {},
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
+    
+    console.log(`API Response: ${res.status} ${res.statusText} for ${method} ${fullUrl}`);
+    
+    await throwIfResNotOk(res);
+    return res;
+  } catch (error) {
+    console.error(`API Error for ${method} ${fullUrl}:`, error);
+    throw error;
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
