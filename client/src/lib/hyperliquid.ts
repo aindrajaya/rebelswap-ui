@@ -46,16 +46,18 @@ export class HyperliquidClient {
   
   async connectWallet(walletType: 'metamask' | 'walletconnect' | 'rabby'): Promise<WalletInfo> {
     try {
-      if (walletType === 'metamask') {
-        if (!window.ethereum) {
-          throw new Error("MetaMask not found. Please install the MetaMask extension.");
-        }
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      if (walletType === 'walletconnect' || (isMobile && walletType === 'metamask')) {
+        // Use WalletConnect or MetaMask Mobile
+        const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
+        this.provider = await EthereumProvider.init({
+          projectId: 'YOUR_PROJECT_ID', // Add your WalletConnect project ID
+          chains: [1], // Ethereum mainnet
+          showQrModal: true
+        });
         
-        this.provider = window.ethereum;
-        
-        // Request account access
-        const accounts = await this.provider.request({ method: 'eth_requestAccounts' });
-        
+        const accounts = await this.provider.enable();
         if (!accounts || accounts.length === 0) {
           throw new Error("No accounts found. Please ensure MetaMask is connected correctly.");
         }
