@@ -19,6 +19,18 @@ import {
 import { hyperliquidClient } from '@/lib/hyperliquid';
 import StrategySelector from './StrategySelector';
 
+// Utility function to convert string to hex (Browser-compatible alternative to Buffer.from)
+const stringToHex = (str: string): string => {
+  let hex = '';
+  for (let i = 0; i < str.length; i++) {
+    const charCode = str.charCodeAt(i);
+    const hexValue = charCode.toString(16);
+    // Ensure two-digit hex values
+    hex += hexValue.padStart(2, '0');
+  }
+  return '0x' + hex;
+};
+
 interface TradeFormValues {
   amount: string;
 }
@@ -44,7 +56,7 @@ const slippageOptions = [0.5, 1.0, 1.5, 2.0];
 
 const TradeForm: React.FC = () => {
   const { toast } = useToast();
-  const { address, isConnected, balance, signer } = useWallet();
+  const { address, isConnected, balance, signer, connect, updateWalletState } = useWallet();
   const { strategies } = useStrategies();
   
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
@@ -185,15 +197,137 @@ const TradeForm: React.FC = () => {
       }
       
       try {
-        // Sign a message for audit purposes
-        if (signer) {
-          const message = `Execute ${params.is_buy ? 'BUY' : 'SELL'} order: ${params.asset} ${params.size} at ${params.price} at ${new Date().toISOString()}`;
-          console.log("Signing message for audit:", message);
-          await signer.signMessage(message);
+        // Create structured data for EIP-712 signing instead of simple message signing
+        const orderAction = {
+          asset: params.asset,
+          is_buy: params.is_buy,
+          size: params.size,
+          price: params.price,
+          timestamp: Math.floor(Date.now() / 1000),
+          userAddress: address?.toLowerCase()
+        };
+
+        // Define the payload types for EIP-712 signing
+        const orderPayloadTypes = [
+          { name: "asset", type: "string" },
+          { name: "is_buy", type: "bool" },
+          { name: "size", type: "uint256" },
+          { name: "price", type: "uint256" },
+          { name: "timestamp", type: "uint256" },
+          { name: "userAddress", type: "address" }
+        ];
+
+        console.log("Executing order via Hyperliquid client");
+        console.log("Order details:", orderAction);
+        
+        // Use direct provider level eth_signTypedData_v4 if possible
+        if (window.ethereum && window.ethereum.request) {
+          try {
+            console.log("Attempting to sign with native provider eth_signTypedData_v4");
+            
+            // Create a formatted copy of the order with proper number handling
+            const formattedOrder = { ...orderAction };
+            
+            // Convert floating point numbers to integers for blockchain compatibility
+            if (typeof formattedOrder.size === 'number') {
+              // Use 1e6 as precision multiplier (e.g., 0.012168 becomes "12168000")
+              const precision = 1000000;
+              formattedOrder.size = Math.floor(formattedOrder.size * precision).toString();
+              console.log("Formatted size:", formattedOrder.size);
+            }
+            
+            if (typeof formattedOrder.price === 'number') {
+              // Use 1e8 for price precision
+              const precision = 100000000;
+              formattedOrder.price = Math.floor(formattedOrder.price * precision).toString();
+              console.log("Formatted price:", formattedOrder.price);
+            }
+            
+            if (typeof formattedOrder.timestamp === 'number') {
+              formattedOrder.timestamp = Math.floor(formattedOrder.timestamp).toString();
+            }
+            
+            const domain = {
+              name: "HyperliquidSignTransaction",
+              version: "1",
+              chainId: 421614, // Arbitrum testnet
+              verifyingContract: "0xFbEA9559AE33214a080c03c68EcF1D3AF0f58A7D" // Default contract address
+            };
+            
+            const typedData = {
+              domain,
+              types: {
+                EIP712Domain: [
+                  { name: "name", type: "string" },
+                  { name: "version", type: "string" },
+                  { name: "chainId", type: "uint256" },
+                  { name: "verifyingContract", type: "address" }
+                ],
+                Order: orderPayloadTypes
+              },
+              primaryType: "Order",
+              message: formattedOrder
+            };
+            
+            console.log("Typing data payload:", JSON.stringify(typedData, null, 2));
+            
+            // Sign directly with provider
+            const signature = await window.ethereum.request({
+              method: 'eth_signTypedData_v4',
+              params: [address, JSON.stringify(typedData)]
+            });
+            
+            console.log("Direct signature obtained:", signature);
+            
+            // Use absolute URL instead of relative path
+            const apiUrl = window.location.origin + '/api/place-order';
+            console.log("Sending order to API endpoint:", apiUrl, {
+              order: orderAction,
+              signature: signature?.substring(0, 20) + "...", // Log part of the signature for brevity
+              user_address: address,
+            });
+            
+            // Send the signed order to the backend
+            const result = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                order: orderAction,
+                signature: signature,
+                user_address: address,
+              }),
+            });
+            
+            console.log("Fetch response received:", {
+              status: result.status,
+              statusText: result.statusText,
+              ok: result.ok
+            });
+            
+            if (!result.ok) {
+              const errorText = await result.text();
+              console.error("API error response:", errorText);
+              throw new Error(`API responded with status: ${result.status}`);
+            }
+            
+            const responseData = await result.json();
+            console.log("API success response:", responseData);
+            
+            return {
+              order_id: responseData.order_id || responseData.orderId || "Order executed",
+              status: "FILLED",
+              message: "Order executed successfully"
+            };
+          } catch (directSignError) {
+            console.warn("Direct provider signing failed, falling back to client method:", directSignError);
+            // Fall back to hyperliquidClient if direct signing fails
+          }
         }
         
-        // Execute order directly through Hyperliquid client
-        console.log("Executing order via Hyperliquid client");
+        // Fall back to the standard client method if direct signing is not available
+        console.log("Using hyperliquidClient.placeOrder as fallback");
         const result = await hyperliquidClient.placeOrder(
           params.asset,
           params.is_buy,
@@ -242,17 +376,42 @@ const TradeForm: React.FC = () => {
   });
   
   // Function to execute a single trade
-  const handleExecuteSingleTrade = (param: TradeParameterDetails) => {
+  const handleExecuteSingleTrade = async (param: TradeParameterDetails) => {
     console.log("Execute Trade button clicked for asset:", param.asset);
     
-    if (!isConnected || !address || !signer) {
-      console.error("Wallet not connected or missing address/signer");
+    // Check if wallet is connected
+    if (!isConnected || !address) {
+      console.log("Wallet not connected, attempting to connect...");
+      
       toast({
-        variant: "destructive",
-        title: "Wallet Not Connected",
-        description: "Please connect your wallet with signing capability to execute trades.",
+        title: "Wallet Connection Required",
+        description: "Please connect your wallet to execute trades.",
+        variant: "default"
       });
-      return;
+      
+      try {
+        // Connect wallet directly using MetaMask
+        await connect('metamask');
+        
+        // Double check if we now have a signer
+        if (!signer) {
+          console.error("No signer available even after connection");
+          toast({
+            variant: "destructive",
+            title: "Signing Capability Required",
+            description: "Your wallet doesn't provide signing capability needed for trades.",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to connect wallet:", error);
+        toast({
+          variant: "destructive",
+          title: "Connection Failed",
+          description: error instanceof Error ? error.message : "Failed to connect wallet",
+        });
+        return;
+      }
     }
     
     const sizeNumber = parseFloat(param.size_asset);
@@ -275,15 +434,22 @@ const TradeForm: React.FC = () => {
         user_address: address
       });
       
-      executeOrderMutation.mutate({
+      const data = executeOrderMutation.mutate({
         asset: param.asset,
         size: sizeNumber,
         is_buy: param.is_buy,
         price: param.estimated_asset_price,
         user_address: address
       });
+
+      console.log("Order execution response GO:", data);
     } catch (error) {
       console.error("Error when calling executeOrderMutation:", error);
+      toast({
+        variant: "destructive",
+        title: "Execution Error",
+        description: error instanceof Error ? error.message : "An error occurred during trade execution",
+      });
     }
   };
 
@@ -318,7 +484,7 @@ const TradeForm: React.FC = () => {
     }
     
     // Check if wallet is connected for execution
-    if (!isConnected || !signer) {
+    if (!isConnected) {
       toast({
         variant: "destructive",
         title: "Wallet Not Connected",
@@ -642,3 +808,4 @@ const TradeForm: React.FC = () => {
 };
 
 export default TradeForm;
+
