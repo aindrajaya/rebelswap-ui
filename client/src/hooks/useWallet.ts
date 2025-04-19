@@ -35,7 +35,7 @@ export function useWallet() {
     const walletInfo = hyperliquidClient.getWalletInfo();
     if (walletInfo?.isConnected) {
       const balance = await hyperliquidClient.getUSDCBalance();
-      const signer = null; // Placeholder as getSigner does not exist
+      const signer = hyperliquidClient.getSigner(); // Get signer from hyperliquidClient
       
       setWalletState({
         address: walletInfo.address,
