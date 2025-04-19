@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -13,31 +14,43 @@ interface WalletOption {
   name: string;
   icon: string;
   description: string;
+  isMobilePreferred: boolean;
 }
 
 const walletOptions: WalletOption[] = [
   {
-    id: 'metamask',
-    name: 'MetaMask',
-    icon: 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
-    description: 'Connect with your MetaMask wallet'
-  },
-  {
     id: 'walletconnect',
     name: 'WalletConnect',
     icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Logo/Blue%20(Default)/Logo.svg',
-    description: 'Scan QR code with WalletConnect'
+    description: 'Connect with most mobile wallet apps',
+    isMobilePreferred: true
+  },
+  {
+    id: 'metamask',
+    name: 'MetaMask',
+    icon: 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
+    description: 'Connect using browser extension or MetaMask mobile',
+    isMobilePreferred: false
   },
   {
     id: 'rabby',
     name: 'Rabby',
     icon: 'https://static.rabby.io/rabby-logo.svg',
-    description: 'Connect using Rabby wallet extension'
+    description: 'Connect using Rabby wallet extension',
+    isMobilePreferred: false
   }
 ];
 
 const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const { connect, isConnecting } = useWallet();
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  const sortedWalletOptions = [...walletOptions].sort((a, b) => {
+    if (isMobile) {
+      return Number(b.isMobilePreferred) - Number(a.isMobilePreferred);
+    }
+    return 0;
+  });
 
   const handleConnect = async (walletType: WalletType) => {
     await connect(walletType);
@@ -55,7 +68,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
         </DialogHeader>
         
         <div className="space-y-3 py-4">
-          {walletOptions.map((wallet) => (
+          {sortedWalletOptions.map((wallet) => (
             <Button
               key={wallet.id}
               variant="outline"
