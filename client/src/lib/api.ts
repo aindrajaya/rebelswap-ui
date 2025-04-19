@@ -106,7 +106,7 @@ export interface ExecuteOrderParams {
   size: number;
   is_buy: boolean;
   price: number;
-  user_address: string;
+  user_address: string | null;
 }
 
 export interface ExecuteOrderResponse {
