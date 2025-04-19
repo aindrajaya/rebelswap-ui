@@ -305,21 +305,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Execute trades with wallet signer
-  apiRouter.post("/trades/execute", async (req, res) => {
+  apiRouter.post("/place-order", async (req, res) => {
+    console.log("Trade execution request received:", req.body);
     try {
-      console.log("Trade execution request received:", req.body);
-      const { strategy_id, trade_parameters, signature, user_address } =
-        req.body;
-
-      if (!strategy_id || !trade_parameters || !signature || !user_address) {
+      const {order, signature, user_address} = req.body;
+      
+      if (!order || !signature || !user_address) {
         return res.status(400).json({
           error: "Missing required parameters",
-          details:
-            "strategy_id, trade_parameters, signature, and user_address are required",
+          details: "order, signature, and user_address are required"
         });
       }
+      
+      console.log("Request body structure:", {
+        order: Object.keys(order),
+        signature: typeof signature,
+        user_address: typeof user_address,
+      });
 
+      
+      
+      // Format the request in the structure expected by the backend
+      const backendPayload = {
+        wallet: user_address,
+        action: {
+          coin: order.asset,
+          is_buy: order.is_buy,
+          sz: formatNumberString(order.size.toString()),
+          limit_px: formatNumberString(order.price.toString()),
+          signatureChainId: "0x66eee", // Default testnet chain ID
+          hyperliquidChain: "Testnet"  // Default to Testnet
+        },
+        primary_type: "Order",
+        signature: signature  // Assuming signature already has r, s, v components
+      };
+      
+      console.log("Sending to backend:", backendPayload);
+      
       if (USE_MOCK_DATA) {
         // Simulate execution with mock data
         // Wait to simulate network request
@@ -328,33 +350,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({
           success: true,
           execution_timestamp_utc: new Date().toISOString(),
-          message: "Trades executed successfully",
-          strategy_id,
+          message: "Order executed successfully",
           tx_hash: `0x${Math.random().toString(16).slice(2, 50)}`,
-          user_address,
+          user_address: user_address,
         });
       }
-
-      // Forward the request to the backend with the signature
-      const response = await axios.post(`${BACKEND_API_URL}/execute-order`, {
-        strategy_id,
-        trade_parameters,
-        signature,
-        user_address,
-      });
-      console.log("Trade execution response:", response.data);
-
+      
+      // Forward the request to the backend
+      const response = await axios.post(`${BACKEND_API_URL}/execute-order`, backendPayload);
+      console.log("Order execution response:", response.data);
+      
       res.json(response.data);
     } catch (error) {
-      console.error("Failed to execute trades:", error);
-
+      console.error("Failed to execute order:", error);
+      
       // Handle API-specific error responses
       if (axios.isAxiosError(error) && error.response) {
         return res.status(error.response.status).json(error.response.data);
       }
-
+      
       res.status(500).json({
-        error: "Failed to execute trades",
+        error: "Failed to execute order",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  // Execute trades with wallet signer
+  apiRouter.post("/place-order2", async (req, res) => {
+    console.log("Trade execution request received:", req.body);
+    try {
+      const { order, signature, user_address } = req.body;
+      
+      if (!order || !signature || !user_address) {
+        return res.status(400).json({
+          error: "Missing required parameters",
+          details: "order, signature, and user_address are required"
+        });
+      }
+      
+      // Format the request in the structure expected by the backend
+      const backendPayload = {
+        wallet: user_address,
+        action: {
+          coin: order.asset, // Remove 'k' prefix if present
+          isBuy: order.is_buy,
+          sz: formatNumberString(order.size.toString()),
+          limitPx: formatNumberString(order.price.toString())
+        },
+        payload_types: {
+          Order: [
+            { name: "coin", type: "string" },
+            { name: "isBuy", type: "bool" },
+            { name: "sz", type: "string" },
+            { name: "limitPx", type: "string" }
+          ]
+        },
+        primary_type: "Order",
+        is_mainnet: false,
+        signature: signature
+      };
+      
+      console.log("Sending to backend:", backendPayload);
+      
+      if (USE_MOCK_DATA) {
+        // Simulate execution with mock data
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        return res.json({
+          success: true,
+          execution_timestamp_utc: new Date().toISOString(),
+          message: "Order executed successfully",
+          tx_hash: `0x${Math.random().toString(16).slice(2, 50)}`,
+          user_address: user_address,
+        });
+      }
+      
+      // Forward the request to the backend
+      const response = await axios.post(`${BACKEND_API_URL}/execute-order`, backendPayload);
+      console.log("Order execution response:", response.data);
+      
+      res.json(response.data);
+    } catch (error) {
+      console.error("Failed to execute order:", error);
+      
+      // Handle API-specific error responses
+      if (axios.isAxiosError(error) && error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: "Failed to execute order",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -619,4 +705,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
   return httpServer;
+}
+
+function formatNumberString(numStr: string | number): string {
+  let str: string = String(numStr);
+  if (str.includes('.')) {
+    // Remove trailing zeros after decimal point
+    str = str.replace(/(\.\d*?[1-9])0+$/, '$1');
+    // Remove trailing ".0" if number is whole
+    str = str.replace(/\.0$/, '');
+    // Remove trailing decimal point if it exists after removing zeros (e.g. "123.")
+    str = str.replace(/\.$/, '');
+  }
+  return str;
 }
