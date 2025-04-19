@@ -20,9 +20,9 @@ const StrategyPerformanceCard: React.FC<StrategyPerformanceCardProps> = ({
     switch (id) {
       case 'MEGA':
         return {
-          text: 'text-primary',
-          bg: 'bg-primary-light',
-          bgLight: 'bg-primary/20'
+          text: 'text-teal',
+          bg: 'bg-teal-light',
+          bgLight: 'bg-teal/20'
         };
       case 'DOWN':
         return {

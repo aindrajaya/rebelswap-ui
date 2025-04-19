@@ -57,9 +57,16 @@ const StrategySelector: React.FC<StrategySelectorProps> = ({
             onClick={() => onSelectStrategy(strategyId)}
           >
             <span className={`font-bold text-xl ${colorClass}`}>{strategyId}</span>
-            <span className="text-xs text-muted-foreground mt-1 text-center">
-              {strategy.description}
+            <span className="text-[.7rem] text-muted-foreground mt-1/2 text-center">
+              {strategy.description.includes('(equal weight)') 
+                ? strategy.description.replace(' (equal weight)', '') 
+                : strategy.description}
             </span>
+            {strategy.description.includes('(equal weight)') && (
+              <span className="text-xs text-muted-foreground text-center italic opacity-70 mt-0.5">
+                (equal weight)
+              </span>
+            )}
           </Button>
         );
       })}
