@@ -53,10 +53,23 @@ export class HyperliquidClient {
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-      if (
-        walletType === "walletconnect" ||
-        (isMobile && walletType === "metamask")
-      ) {
+      if (walletType === "metamask") {
+        // For MetaMask, first try the native wallet or extension
+        if (window.ethereum?.isMetaMask) {
+          this.provider = window.ethereum;
+          const accounts = await this.provider.request({ method: 'eth_requestAccounts' });
+          if (!accounts || accounts.length === 0) {
+            throw new Error("No accounts found. Please ensure MetaMask is connected correctly.");
+          }
+          const address = accounts[0];
+          this.walletInfo = { address, isConnected: true };
+          return this.walletInfo;
+        }
+        // If MetaMask is not available, use WalletConnect as fallback
+      }
+
+      // Use WalletConnect for other mobile wallets or as MetaMask fallback
+      if (walletType === "walletconnect" || walletType === "metamask") {
         // Use WalletConnect or MetaMask Mobile
         const { EthereumProvider } = await import(
           "@walletconnect/ethereum-provider"

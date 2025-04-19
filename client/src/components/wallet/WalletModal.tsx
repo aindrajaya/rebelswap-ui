@@ -19,17 +19,17 @@ interface WalletOption {
 
 const walletOptions: WalletOption[] = [
   {
-    id: 'walletconnect',
-    name: 'Mobile Wallet',
-    icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Logo/Blue%20(Default)/Logo.svg',
-    description: 'Connect with Trust Wallet, Coinbase Wallet, etc.',
-    isMobilePreferred: true
-  },
-  {
     id: 'metamask',
     name: 'MetaMask',
     icon: 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
-    description: 'Connect with MetaMask mobile app',
+    description: 'Connect with MetaMask mobile or extension',
+    isMobilePreferred: true
+  },
+  {
+    id: 'walletconnect',
+    name: 'WalletConnect',
+    icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Logo/Blue%20(Default)/Logo.svg',
+    description: 'Connect with other mobile wallets',
     isMobilePreferred: true
   },
   {
