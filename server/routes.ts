@@ -5,10 +5,7 @@ import { storage } from "./storage";
 import axios from "axios";
 
 // API endpoints for backend services
-const BACKEND_API_URL =
-  process.env.NODE_ENV === "production"
-    ? "https://hyperliquid-api.replit.app/"
-    : "http://localhost:5000"; // Flask backend URL
+const BACKEND_API_URL = "https://hyperliquid-api.replit.app/";
 const USE_MOCK_DATA = false; // Use mock data instead of real data from Flask backend
 
 // For debugging
