@@ -29,10 +29,50 @@ export class HyperliquidClient {
         const walletData = JSON.parse(savedWallet);
         if (walletData && walletData.address && walletData.isConnected) {
           this.walletInfo = walletData;
+          
+          // Try to reconnect to the provider when restoring from localStorage
+          if (window.ethereum) {
+            this.provider = window.ethereum;
+            
+            // Setup event listeners for account changes
+            this.provider.on(
+              "accountsChanged",
+              this.handleAccountsChanged.bind(this)
+            );
+            this.provider.on("disconnect", this.handleDisconnect.bind(this));
+            
+            // Verify the connection is still valid
+            this.verifyConnection();
+          }
         }
       }
     } catch (e) {
       console.error("Failed to retrieve persisted wallet connection:", e);
+    }
+  }
+  
+  // Verify that the stored wallet connection is still valid
+  private async verifyConnection() {
+    if (!this.provider) return;
+    
+    try {
+      // Check if we're still connected to the wallet
+      const accounts = await this.provider.request({ 
+        method: 'eth_accounts' 
+      });
+      
+      if (!accounts || accounts.length === 0) {
+        // If no accounts, we're not connected anymore
+        console.log("Stored wallet connection is no longer valid");
+        this.disconnectWallet();
+      } else if (this.walletInfo && accounts[0].toLowerCase() !== this.walletInfo.address.toLowerCase()) {
+        // If the account changed, update it
+        this.walletInfo.address = accounts[0];
+        this.persistConnection();
+      }
+    } catch (error) {
+      console.error("Error verifying wallet connection:", error);
+      this.disconnectWallet();
     }
   }
 
@@ -63,19 +103,35 @@ export class HyperliquidClient {
           }
           const address = accounts[0];
           this.walletInfo = { address, isConnected: true };
+          
+          // Persist connection
+          this.persistConnection();
+          
+          // Setup event listeners for account changes
+          this.provider.on(
+            "accountsChanged",
+            this.handleAccountsChanged.bind(this),
+          );
+          this.provider.on("disconnect", this.handleDisconnect.bind(this));
+          
           return this.walletInfo;
         }
-        // If MetaMask is not available, use WalletConnect as fallback
+        // If MetaMask is not available and we're on mobile, try WalletConnect
+        else if (isMobile) {
+          walletType = "walletconnect";
+        } else {
+          throw new Error("MetaMask not detected. Please install the MetaMask extension.");
+        }
       }
 
-      // Use WalletConnect for other mobile wallets or as MetaMask fallback
-      if (walletType === "walletconnect" || walletType === "metamask") {
-        // Use WalletConnect or MetaMask Mobile
+      // Use WalletConnect
+      if (walletType === "walletconnect") {
+        // Use WalletConnect
         const { EthereumProvider } = await import(
           "@walletconnect/ethereum-provider"
         );
         this.provider = await EthereumProvider.init({
-          projectId: "e98a926432923ad3a689e9e93eea792f", // Add your WalletConnect project ID
+          projectId: "e98a926432923ad3a689e9e93eea792f", // WalletConnect project ID
           chains: [1], // Ethereum mainnet
           showQrModal: true,
         });
@@ -83,7 +139,7 @@ export class HyperliquidClient {
         const accounts = await this.provider.enable();
         if (!accounts || accounts.length === 0) {
           throw new Error(
-            "No accounts found. Please ensure MetaMask is connected correctly.",
+            "No accounts found. Please ensure your wallet is connected correctly."
           );
         }
 
@@ -101,10 +157,31 @@ export class HyperliquidClient {
         this.provider.on("disconnect", this.handleDisconnect.bind(this));
 
         return this.walletInfo;
-      } else if (walletType === "walletconnect") {
-        throw new Error("WalletConnect is not implemented yet.");
       } else if (walletType === "rabby") {
-        throw new Error("Rabby wallet is not implemented yet.");
+        // Implement Rabby wallet connection
+        if (window.ethereum) {
+          this.provider = window.ethereum;
+          const accounts = await this.provider.request({ method: 'eth_requestAccounts' });
+          if (!accounts || accounts.length === 0) {
+            throw new Error("No accounts found. Please ensure Rabby is connected correctly.");
+          }
+          const address = accounts[0];
+          this.walletInfo = { address, isConnected: true };
+          
+          // Persist connection
+          this.persistConnection();
+          
+          // Setup event listeners for account changes
+          this.provider.on(
+            "accountsChanged",
+            this.handleAccountsChanged.bind(this),
+          );
+          this.provider.on("disconnect", this.handleDisconnect.bind(this));
+          
+          return this.walletInfo;
+        } else {
+          throw new Error("Rabby wallet not detected.");
+        }
       } else {
         throw new Error("Unsupported wallet type.");
       }
