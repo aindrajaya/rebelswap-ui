@@ -20,23 +20,23 @@ interface WalletOption {
 const walletOptions: WalletOption[] = [
   {
     id: 'walletconnect',
-    name: 'WalletConnect',
+    name: 'Mobile Wallet',
     icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Logo/Blue%20(Default)/Logo.svg',
-    description: 'Connect with most mobile wallet apps',
+    description: 'Connect with Trust Wallet, Coinbase Wallet, etc.',
     isMobilePreferred: true
   },
   {
     id: 'metamask',
     name: 'MetaMask',
     icon: 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
-    description: 'Connect using browser extension or MetaMask mobile',
-    isMobilePreferred: false
+    description: 'Connect with MetaMask mobile app',
+    isMobilePreferred: true
   },
   {
     id: 'rabby',
     name: 'Rabby',
     icon: 'https://static.rabby.io/rabby-logo.svg',
-    description: 'Connect using Rabby wallet extension',
+    description: 'Connect using Rabby browser extension',
     isMobilePreferred: false
   }
 ];
@@ -45,12 +45,10 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const { connect, isConnecting } = useWallet();
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-  const sortedWalletOptions = [...walletOptions].sort((a, b) => {
-    if (isMobile) {
-      return Number(b.isMobilePreferred) - Number(a.isMobilePreferred);
-    }
-    return 0;
-  });
+  // Filter and sort wallet options based on device type
+  const filteredWalletOptions = walletOptions.filter(wallet => 
+    isMobile ? wallet.isMobilePreferred : true
+  );
 
   const handleConnect = async (walletType: WalletType) => {
     await connect(walletType);
@@ -68,7 +66,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
         </DialogHeader>
         
         <div className="space-y-3 py-4">
-          {sortedWalletOptions.map((wallet) => (
+          {filteredWalletOptions.map((wallet) => (
             <Button
               key={wallet.id}
               variant="outline"
